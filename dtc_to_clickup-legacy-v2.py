@@ -413,7 +413,6 @@ class DTCtoClickUpConverter:
                     description_parts.append(f"Required Copy: {copy_val}")
 
             # Creative assets
-            assets = None  # Initialize to prevent reference error
             assets_row = find_row('Creative Assets')
             if assets_row:
                 assets = self.get_cell_value(sheet, assets_row, col)
@@ -524,7 +523,7 @@ class DTCtoClickUpConverter:
             count += 1
 
             # Split SMS into separate task when campaign has SMS
-            if (assets and 'SMS' in assets) or sms_val:
+            if 'SMS' in assets or sms_val:
                 sms_task_name = f"[SMS] {task_name}"
                 sms_desc_parts = [
                     "== SMS BRIEF ==",

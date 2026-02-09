@@ -81,84 +81,145 @@ brand = st.radio(
     help="Choose the brand for this calendar (determines tagging and formatting)"
 )
 
-# Convert button
+# Week selection (only show after file is uploaded)
+selected_weeks = None
 if uploaded_file is not None:
     st.success(f"✅ File uploaded: {uploaded_file.name}")
     
-    if st.button("🚀 Convert to ClickUp CSV", type="primary"):
+    # Preview available weeks by loading workbook temporarily
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Save uploaded file to temp location
+        input_path = Path(temp_dir) / uploaded_file.name
+        with open(input_path, 'wb') as f:
+            f.write(uploaded_file.getbuffer())
         
-        with st.spinner("Converting your DTC Calendar..."):
+        # Create converter just to get available weeks
+        try:
+            preview_converter = DTCtoClickUpConverter(
+                excel_file=str(input_path),
+                brand=brand,
+                output_file=str(Path(temp_dir) / "temp.csv")
+            )
             
-            # Create temporary directory for processing
-            with tempfile.TemporaryDirectory() as temp_dir:
+            if preview_converter.load_workbook_safe():
+                available_weeks = preview_converter.get_available_weekly_sheets()
                 
-                # Save uploaded file to temp location
-                input_path = Path(temp_dir) / uploaded_file.name
-                with open(input_path, 'wb') as f:
-                    f.write(uploaded_file.getbuffer())
-                
-                # Define output path
-                output_filename = f"{brand}_ClickUp_Import.csv"
-                output_path = Path(temp_dir) / output_filename
-                
-                # Run conversion
-                try:
-                    converter = DTCtoClickUpConverter(
-                        excel_file=str(input_path),
-                        brand=brand,
-                        output_file=str(output_path)
+                if available_weeks:
+                    st.markdown("### Select Weeks to Import")
+                    st.markdown("**Tip:** Only select new weeks to avoid creating duplicate tasks in ClickUp")
+                    
+                    # Option to select all or specific weeks
+                    import_option = st.radio(
+                        "Import option:",
+                        options=["Import all weeks", "Select specific weeks"],
+                        horizontal=True,
+                        help="Choose whether to import all weeks or select specific ones"
                     )
                     
-                    success = converter.convert()
-                    
-                    if success:
-                        # Display summary
-                        st.success("✅ Conversion Complete!")
-                        
-                        # Show stats in columns
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Email Briefs", converter.stats['campaign_tasks'])
-                        with col2:
-                            st.metric("Sheets Processed", converter.stats['sheets_processed'])
-                        with col3:
-                            st.metric("Total Tasks", len(converter.tasks))
-                        
-                        # Read the generated CSV for download
-                        with open(output_path, 'rb') as f:
-                            csv_data = f.read()
-                        
-                        # Download button
-                        st.download_button(
-                            label="⬇️ Download ClickUp CSV",
-                            data=csv_data,
-                            file_name=output_filename,
-                            mime="text/csv",
-                            type="primary"
+                    if import_option == "Select specific weeks":
+                        selected_weeks = st.multiselect(
+                            "Choose weeks to import:",
+                            options=available_weeks,
+                            default=available_weeks,
+                            help="Select one or more weeks. Deselect weeks that are already in ClickUp to avoid duplicates."
                         )
                         
-                        # Show preview of tasks
-                        with st.expander("👀 Preview Tasks"):
-                            st.markdown(f"**First 5 tasks from {len(converter.tasks)} total:**")
-                            for i, task in enumerate(converter.tasks[:5], 1):
-                                st.markdown(f"**{i}. {task['Task Name']}**")
-                                st.text(f"Due: {task['Due Date']} | Priority: {task['Priority']}")
-                                st.text(f"Tags: {task['Tags']}")
-                                # Show truncated description directly (no nested expander)
-                                desc = task['Task Description']
-                                if len(desc) > 200:
-                                    st.text(desc[:200] + "...")
-                                else:
-                                    st.text(desc)
-                                st.markdown("---")
-                    
+                        if not selected_weeks:
+                            st.warning("⚠️ Please select at least one week to import")
                     else:
-                        st.error("❌ Conversion failed. Check your Excel file format.")
-                        st.info("Make sure your file contains weekly sheets (Wk6, Wk7, etc.) with email brief data.")
+                        selected_weeks = None  # None means import all
+                        st.info(f"📋 Will import all {len(available_weeks)} weeks: {', '.join(available_weeks)}")
+                else:
+                    st.error("❌ No weekly sheets found in this file (looking for sheets named Wk6, Wk7, etc.)")
+        except Exception as e:
+            st.error(f"❌ Error reading Excel file: {str(e)}")
+
+# Convert button
+if uploaded_file is not None:
+    # Only show button if weeks are selected (or all weeks option chosen)
+    can_proceed = True
+    
+    # If user chose "Select specific weeks" but didn't select any, block conversion
+    if selected_weeks is not None and len(selected_weeks) == 0:
+        can_proceed = False
+        st.warning("⚠️ Please select at least one week to import")
+    
+    if can_proceed:
+        if st.button("🚀 Convert to ClickUp CSV", type="primary"):
+            
+            with st.spinner("Converting your DTC Calendar..."):
                 
-                except Exception as e:
-                    st.error(f"❌ Error during conversion: {str(e)}")
-                    st.info("If this error persists, contact your Arcadia Digital team.")
+                # Create temporary directory for processing
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    
+                    # Save uploaded file to temp location
+                    input_path = Path(temp_dir) / uploaded_file.name
+                    with open(input_path, 'wb') as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    # Define output path
+                    output_filename = f"{brand}_ClickUp_Import.csv"
+                    output_path = Path(temp_dir) / output_filename
+                    
+                    # Run conversion
+                    try:
+                        converter = DTCtoClickUpConverter(
+                            excel_file=str(input_path),
+                            brand=brand,
+                            output_file=str(output_path)
+                        )
+                        
+                        # Pass selected_weeks to convert method
+                        success = converter.convert(selected_weeks=selected_weeks)
+                        
+                        if success:
+                            # Display summary
+                            st.success("✅ Conversion Complete!")
+                            
+                            # Show stats in columns
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Email Briefs", converter.stats['campaign_tasks'])
+                            with col2:
+                                st.metric("Sheets Processed", converter.stats['sheets_processed'])
+                            with col3:
+                                st.metric("Total Tasks", len(converter.tasks))
+                            
+                            # Read the generated CSV for download
+                            with open(output_path, 'rb') as f:
+                                csv_data = f.read()
+                            
+                            # Download button
+                            st.download_button(
+                                label="⬇️ Download ClickUp CSV",
+                                data=csv_data,
+                                file_name=output_filename,
+                                mime="text/csv",
+                                type="primary"
+                            )
+                            
+                            # Show preview of tasks
+                            with st.expander("👀 Preview Tasks"):
+                                st.markdown(f"**First 5 tasks from {len(converter.tasks)} total:**")
+                                for i, task in enumerate(converter.tasks[:5], 1):
+                                    st.markdown(f"**{i}. {task['Task Name']}**")
+                                    st.text(f"Due: {task['Due Date']} | Priority: {task['Priority']}")
+                                    st.text(f"Tags: {task['Tags']}")
+                                    # Show truncated description directly (no nested expander)
+                                    desc = task['Task Description']
+                                    if len(desc) > 200:
+                                        st.text(desc[:200] + "...")
+                                    else:
+                                        st.text(desc)
+                                    st.markdown("---")
+                        
+                        else:
+                            st.error("❌ Conversion failed. Check your Excel file format.")
+                            st.info("Make sure your file contains weekly sheets (Wk6, Wk7, etc.) with email brief data.")
+                    
+                    except Exception as e:
+                        st.error(f"❌ Error during conversion: {str(e)}")
+                        st.info("If this error persists, contact your Arcadia Digital team.")
 
 else:
     st.info("👆 Upload an Excel file to get started")

@@ -413,7 +413,6 @@ class DTCtoClickUpConverter:
                     description_parts.append(f"Required Copy: {copy_val}")
 
             # Creative assets
-            assets = None  # Initialize to prevent reference error
             assets_row = find_row('Creative Assets')
             if assets_row:
                 assets = self.get_cell_value(sheet, assets_row, col)
@@ -524,7 +523,7 @@ class DTCtoClickUpConverter:
             count += 1
 
             # Split SMS into separate task when campaign has SMS
-            if (assets and 'SMS' in assets) or sms_val:
+            if 'SMS' in assets or sms_val:
                 sms_task_name = f"[SMS] {task_name}"
                 sms_desc_parts = [
                     "== SMS BRIEF ==",
@@ -556,34 +555,10 @@ class DTCtoClickUpConverter:
 
         return count
 
-    def get_available_weekly_sheets(self) -> List[str]:
-        """
-        Get list of available weekly sheet names in the workbook.
-
-        Returns:
-            List of sheet names that match weekly pattern
-        """
-        weekly_pattern = re.compile(r'(^Wk\d+$|_wk\d+)', re.IGNORECASE)
-        skip_sheets = {'Product Launch Calendar', 'Content Calendar', 'Template',
-                        'Sheet3', 'Marketing Pipeline'}
-        
-        available_sheets = []
-        for sheet_name in self.workbook.sheetnames:
-            if sheet_name in skip_sheets:
-                continue
-            if weekly_pattern.search(sheet_name):
-                available_sheets.append(sheet_name)
-        
-        return sorted(available_sheets)
-
-    def find_and_extract_all_weekly_sheets(self, selected_weeks: Optional[List[str]] = None) -> int:
+    def find_and_extract_all_weekly_sheets(self) -> int:
         """
         Find all weekly sheets (Wk*, wk*, *_wk*) and extract campaign tasks.
         Prioritizes standard Wk# sheets (the email brief tabs).
-
-        Args:
-            selected_weeks: Optional list of specific week sheet names to process.
-                          If None, processes all weekly sheets.
 
         Returns:
             Total number of campaign tasks extracted
@@ -598,10 +573,6 @@ class DTCtoClickUpConverter:
             if sheet_name in skip_sheets:
                 continue
             if weekly_pattern.search(sheet_name):
-                # If selected_weeks provided, only process those sheets
-                if selected_weeks is not None and sheet_name not in selected_weeks:
-                    continue
-                    
                 count = self.extract_campaign_tasks_from_sheet(sheet_name)
                 if count > 0:
                     total_count += count
@@ -656,24 +627,17 @@ class DTCtoClickUpConverter:
         print(f"Total Tasks:          {len(self.tasks)}")
         print("=" * 60 + "\n")
 
-    def convert(self, selected_weeks: Optional[List[str]] = None) -> bool:
+    def convert(self) -> bool:
         """
         Run full conversion process.
         Focuses exclusively on Wk# tabs (email briefs) — the tasks Angie enters manually.
         Content Calendar, Product Launch Calendar, and Marketing Pipeline are skipped.
-
-        Args:
-            selected_weeks: Optional list of specific week sheet names to process.
-                          If None, processes all weekly sheets.
-
-        Returns:
-            bool: True if successful, False otherwise
         """
         if not self.load_workbook_safe():
             return False
 
-        # Extract email brief tasks from selected or all weekly sheets
-        self.find_and_extract_all_weekly_sheets(selected_weeks)
+        # Extract email brief tasks from all weekly sheets only
+        self.find_and_extract_all_weekly_sheets()
 
         # Write to CSV
         if not self.write_csv():
